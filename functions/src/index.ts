@@ -110,14 +110,15 @@ const scrapeMetatags = (text: string) => {
         const isAllowed = robots.isAllowed(url, userAgent)
 
         if (isAllowed) {
+            const cacheKey = url.replace(/\//g, '_')
 
             const linkPreviewString = await getCache(
                 'karazann-link-preview',
-                url.replace(/\//g, '_')
+                cacheKey
             )
             // If we can get from the cache get from there
             if (linkPreviewString) return JSON.parse(linkPreviewString)
-            
+
             try {
                 const meta = await extractMetadata(url)
 
@@ -126,7 +127,7 @@ const scrapeMetatags = (text: string) => {
                 
                 if (Array.isArray(image)) {
                     images = [...image]
-                } else { 
+                } else {
                     images = [image]
                 }
 
@@ -134,47 +135,51 @@ const scrapeMetatags = (text: string) => {
                 images.forEach((i: any) => {
                     const parsedUrl = urlParser.parse(url)
                     const imageUrl = i.url
-                    
+
                     delete i.height
                     delete i.width
                     delete i.alt
 
-                    if (!relative.test(imageUrl)) { 
+                    if (!relative.test(imageUrl)) {
                         const newUrl = urlParser.format({
                             host: parsedUrl.host,
                             protocol: parsedUrl.protocol,
                             port: parsedUrl.port || undefined,
                             pathname: imageUrl
                         })
-                        
+
                         i.url = newUrl
                     }
                 })
 
-                console.log(meta)
                 const linkPreview = {
-                    urL: meta.data.ogUrl || url,
-                    title: meta.data.twitterTitle || meta.data.ogTitle || meta.data.ogSiteName,
+                    success: true,
+                    url,
+                    title:
+                        meta.data.twitterTitle ||
+                        meta.data.ogTitle ||
+                        meta.data.ogSiteName,
                     images
                 }
 
                 await saveCache(
                     'karazann-link-preview',
-                    url.replace(/\//g, '_'),
+                    cacheKey,
                     JSON.stringify(linkPreview)
                 )
-    
+
                 return linkPreview
-            } catch (e) { 
-                console.error(e)
+            } catch (e) {
                 return {
+                    success: false,
                     status: 'failed'
                 }
-            } 
-
+            }
         } else {
             return {
-                status: 'not allowed'
+                success: false,
+                status: 'not allowed',
+                url
             }
         }
     })
@@ -183,21 +188,16 @@ const scrapeMetatags = (text: string) => {
 }
 
 export const scraper = functions.https.onRequest(async (req, res) => {
-    try {
-        corsHandler(req, res, async () => {
-            if (req.query.text) {
-                // console.log(req.query.text)
-                const body = req.query
-                const data = await scrapeMetatags(body.text)
-
-                res.send(data)
-            } else {
-                res.send({
-                    status: false
-                })
-            }
-        })
-    } catch (e) {
-        // console.error(e)
-    }
+    corsHandler(req, res, async () => {
+        if (req.query.text) {
+            // console.log(req.query.text)
+            const body = req.query
+            const data = await scrapeMetatags(body.text)
+            res.send(data)
+        } else {
+            res.status(422).send({
+                success: false
+            })
+        }
+    })
 })
